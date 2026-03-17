@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Final Working)
+name: APK to AAB Converter (Debug Mode)
 
 on:
   workflow_dispatch:
@@ -20,38 +20,49 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install AAPT2 & Tools
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download and Debug Files
         run: |
           # AAPT2 Setup
           sdkmanager "build-tools;34.0.0"
-          echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/build-tools;34.0.0" >> $GITHUB_PATH
           
-          # Bundletool download (Using gh for reliability)
-          gh release download --repo google/bundletool --pattern "bundletool-all-1.17.2.jar" --output bundletool.jar
+          echo "--- STARTING DOWNLOADS ---"
           
-          # APK Download (Using gh for your repo)
-          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
+          # Bundletool download (Fixed URL)
+          curl -L -o bundletool.jar "https://github.com"
           
-          # Debug: File check (Ab size sahi dikhayega)
-          ls -lh bundletool.jar app.apk
+          # APK Download (Explicit Headers ke saath)
+          URL="https://github.com"
+          curl -L -H "User-Agent: Mozilla/5.0" -H "Accept: application/octet-stream" -o app.apk "$URL"
+          
+          echo "--- DEBUG INFO ---"
+          echo "File Size Info:"
+          ls -lh app.apk bundletool.jar
+          
+          echo "File Type Check:"
+          file app.apk
+          file bundletool.jar
+          
+          echo "File Content Preview (First 5 lines):"
+          head -n 5 app.apk | cut -c1-100
+          
+          # Agar file 'PK' se start nahi ho rahi, matlab wo ZIP/APK nahi hai
+          if [[ $(head -c 2 app.apk) != "PK" ]]; then
+            echo "ERROR: app.apk is NOT a valid ZIP/APK file (HTML detect hua hai)."
+            exit 1
+          fi
 
-      - name: Process Resources and Convert
+      - name: Process and Convert
         run: |
-          # APK Extract
+          # Extract and Convert
           unzip -o app.apk -d apk_contents
-          
-          # AAPT2 Conversion
           aapt2 convert --output-format proto app.apk -o converted_resources.zip
           unzip -o converted_resources.zip -d proto_out/
           cp proto_out/resources.pb ./resources.pb
 
-      - name: Create AAB Structure
+      - name: Build AAB Structure
         run: |
           mkdir -p base/manifest base/dex base/res base/lib base/assets
-          
-          # Files Copying
           [ -f "apk_contents/AndroidManifest.xml" ] && cp apk_contents/AndroidManifest.xml base/manifest/
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/res" ] && cp -r apk_contents/res base/
@@ -59,16 +70,12 @@ jobs:
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
           [ -f "resources.pb" ] && cp resources.pb base/
           
-          # Zip Module
+          # Zip and Build
           cd base && zip -r ../module.zip ./* && cd ..
-
-      - name: Build Final AAB
-        run: |
-          # Ab bundletool sahi chalega
           java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
 
-      - name: Upload AAB
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: converted-app-aab
+          name: converted-aab
           path: app.aab
