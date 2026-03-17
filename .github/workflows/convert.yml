@@ -12,72 +12,68 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java Environment
-        uses: actions/setup-java@v4
+        [span_0](start_span)uses: actions/setup-java@v4[span_0](end_span)
         with:
           distribution: 'temurin'
-          java-version: '17'
+          [span_1](start_span)java-version: '17'[span_1](end_span)
 
-      - name: Install Professional Android Tools
+      - name: Install Tools
         run: |
           sudo apt update
-          # aapt2 install karna zaroori hai modern builds ke liye
-          sudo apt install -y apktool wget zip unzip aapt2
+          [span_2](start_span)sudo apt install -y apktool wget zip unzip[span_2](end_span)
+          
+          # AAPT2 ko manual locate karke system path mein add karna
+          AAPT2_PATH=$(find $ANDROID_SDK_ROOT/build-tools -name aapt2 -type f | sort -V | tail -n 1)
+          sudo ln -s "$AAPT2_PATH" /usr/local/bin/aapt2
+          echo "AAPT2 located at: $AAPT2_PATH"
 
       - name: Download Bundletool
         run: |
-          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -O bundletool.jar
+          [span_3](start_span)wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -O bundletool.jar[span_3](end_span)
 
       - name: Download Target APK
         run: |
-          wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
+          [span_4](start_span)wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk[span_4](end_span)
 
-      - name: Decode APK (Disassembling)
+      - name: Decode APK
         run: |
-          # --baksmali flag ensure karta hai ki code sahi se extract ho
-          apktool d app.apk -o project
+          [span_5](start_span)apktool d app.apk -o project[span_5](end_span)
 
-      - name: Auto-Fix Resources (The "Magic" Step)
+      - name: Auto-Fix Resources
         run: |
-          echo "Starting Auto-Fix for invalid resource names..."
-          
-          # 1. Rename files starting with or containing '$' (Material Design common issue)
+          echo "Cleaning invalid characters..."
+          # Rename files with '$'
           find project/res -name "*$*" -type f | while read file; do
             new_name=$(echo "$file" | sed 's/\$//g')
             if [ "$file" != "$new_name" ]; then
               mv "$file" "$new_name"
-              echo "Fixed Filename: $(basename "$file") -> $(basename "$new_name")"
             fi
           done
 
-          # 2. Update XML references to match new filenames
-          echo "Updating XML references internal to resources..."
+          # Update XML references
           find project/res -type f -name "*.xml" -exec sed -i 's/@drawable\/\$/@drawable\//g' {} + || true
           find project/res -type f -name "*.xml" -exec sed -i 's/drawable\/\$/drawable\//g' {} + || true
-          
-          # 3. Fix potential issues in AndroidManifest
-          sed -i 's/android:extractNativeLibs="false"/android:extractNativeLibs="true"/g' project/AndroidManifest.xml || true
 
       - name: Rebuild with AAPT2 Engine
         run: |
-          # AAPT2 force karna zaroori hai 'First type is not attr' fix karne ke liye
-          apktool b --use-aapt2 project -o rebuilt_unsigned.apk
+          # explicitly aapt2 path provide karna agar apktool na dhund paaye
+          [span_6](start_span)apktool b --use-aapt2 project -o rebuilt_unsigned.apk[span_6](end_span)
 
-      - name: Prepare AAB Module Structure
+      - name: Create Bundle Structure
         run: |
           mkdir -p base/manifest base/dex base/res
-          # Note: Simple conversion needs base structure
-          cp rebuilt_unsigned.apk base/base.apk
-          zip -r base.zip base
+          [span_7](start_span)cp rebuilt_unsigned.apk base/base.apk[span_7](end_span)
+          [span_8](start_span)zip -r base.zip base[span_8](end_span)
 
       - name: Build Final AAB
         run: |
           java -jar bundletool.jar build-bundle \
           --modules=base.zip \
-          --output=app.aab
+          -[span_9](start_span)-output=app.aab[span_9](end_span)
 
-      - name: Upload Processed AAB
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: converted-aab-package
+          name: converted-aab
           path: app.aab
-
+          
