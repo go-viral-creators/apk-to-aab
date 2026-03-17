@@ -1,4 +1,4 @@
-name: AAB to APK Converter
+name: AAB to APK Converter (Working)
 
 on:
   workflow_dispatch:
@@ -29,20 +29,28 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Secure Download (API Method)
+      - name: Install bundletool (Working Method from convert.yml)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
-          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar
-          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
+          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar --clobber
+
       - name: Download AAB
         run: |
           if [ "${{ github.event.inputs.use_artifact }}" = "yes" ]; then
-            # Download artifact from previous run (assuming it's named 'converted-aab-file')
-            gh run download --name converted-aab-file --repo ${{ github.repository }}
-            mv *.aab input.aab 2>/dev/null || true
+            # Download artifact from previous run
+            gh run download --name converted-aab-file --repo ${{ github.repository }} || true
+            # Find any .aab file in current directory
+            AAB_FILE=$(find . -maxdepth 1 -name "*.aab" -print -quit)
+            if [ -n "$AAB_FILE" ]; then
+              mv "$AAB_FILE" input.aab
+              echo "Artifact AAB found and renamed to input.aab"
+            else
+              echo "No AAB file found in artifact!"
+              exit 1
+            fi
           elif [ -n "${{ github.event.inputs.aab_url }}" ]; then
             wget "${{ github.event.inputs.aab_url }}" -O input.aab
           else
@@ -50,13 +58,14 @@ jobs:
             exit 1
           fi
 
-      - name: Generate APKs from AAB
+      - name: Generate Universal APK from AAB
         run: |
-          # Generate APK set
+          # Generate APK set (universal mode means single APK for all devices)
           java -jar bundletool.jar build-apks --bundle=input.aab --output=app.apks --mode=universal
           # Extract universal APK from the .apks archive
-          unzip app.apks -d apks_output
-          cp apks_output/universal.apk app-universal.apk 2>/dev/null || true
+          unzip -o app.apks -d apks_output
+          # Copy universal.apk (name might vary, try to find it)
+          find apks_output -name "*.apk" -exec cp {} app-universal.apk \; -quit
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
