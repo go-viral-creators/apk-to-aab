@@ -32,30 +32,21 @@ jobs:
         run: |
           wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Show files
-        run: |
-          ls -lh
-
       - name: Decode APK
         run: |
           apktool d app.apk -o project
-      - name: Decode APK
-        run: |
-          [span_2](start_span)apktool d app.apk -o project[span_2](end_span)
 
-      - name: Fix Invalid Filenames
+      - name: Fix Invalid Filenames ($ characters)
         run: |
-          # Find all files starting with $ in the res directory and rename them
-          find project/res -name "$*" -type f | while read file; do
+          # 1. Rename physical files to remove '$'
+          find project/res -name "*$*" -type f | while read file; do
             new_name=$(echo "$file" | sed 's/\$//g')
             mv "$file" "$new_name"
-            echo "Renamed $file to $new_name"
           done
-
-      - name: Rebuild APK
-        run: |
-          [span_3](start_span)apktool b project -o rebuilt.apk[span_3](end_span)
           
+          # 2. Update references inside XML files so they don't look for the old names
+          grep -rl "\$" project/res/ | xargs sed -i 's/\$//g' || true
+
       - name: Rebuild APK
         run: |
           apktool b project -o rebuilt.apk
