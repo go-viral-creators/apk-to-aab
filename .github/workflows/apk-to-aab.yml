@@ -2,6 +2,16 @@ name: APK to AAB Converter (Final Working)
 
 on:
   workflow_dispatch:
+    inputs:
+      file_url:
+        description: 'Direct URL of APK file'
+        required: true
+        type: string
+      mode:
+        description: 'Conversion mode'
+        required: false
+        default: 'apk-to-aab'
+        type: string
 
 jobs:
   convert:
