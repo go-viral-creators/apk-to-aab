@@ -38,18 +38,21 @@ jobs:
       - name: Fix Resource Names and References
         run: |
           echo "Cleaning up invalid characters in filenames..."
-          # Sabhi files jinme $ hai unhe rename karna
+          # Sirf un files ko dhoondo jinme '$' hai
           find project/res -name "*$*" -type f | while read file; do
             new_name=$(echo "$file" | sed 's/\$//g')
-            mv "$file" "$new_name"
+            # Check if naya naam purane naam se alag hai to avoid "same file" error
+            if [ "$file" != "$new_name" ]; then
+              mv "$file" "$new_name"
+              echo "Renamed: $file -> $new_name"
+            fi
           done
           
           echo "Updating XML references..."
-          # XML files ke andar jahan purane naam ($ waale) use hue hain unhe theek karna
-          # Hum sirf resources ke andar check kar rahe hain
-          find project/res -type f -name "*.xml" -print0 | xargs -0 sed -i 's/@drawable\/\$/@drawable\//g' || true
-          find project/res -type f -name "*.xml" -print0 | xargs -0 sed -i 's/drawable\/\$/drawable\//g' || true
-
+          # XML ke andar ke references theek karna
+          find project/res -type f -name "*.xml" -exec sed -i 's/@drawable\/\$/@drawable\//g' {} + || true
+          find project/res -type f -name "*.xml" -exec sed -i 's/drawable\/\$/drawable\//g' {} + || true
+          
       - name: Rebuild APK
         run: |
           # --copy-force ensures we try to build even if there are minor issues
