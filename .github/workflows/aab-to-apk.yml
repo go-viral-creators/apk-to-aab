@@ -101,7 +101,8 @@ jobs:
           echo "✅ Universal APK created: app-universal.apk"
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: converted-apk
           path: app-universal.apk
+          archive: false
