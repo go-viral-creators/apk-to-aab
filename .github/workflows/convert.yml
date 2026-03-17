@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  convert:
+  build:
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup Java
+      - name: Install Java
         uses: actions/setup-java@v3
         with:
           distribution: temurin
@@ -21,7 +21,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt update
-          sudo apt install -y apktool zip unzip wget
+          sudo apt install -y unzip zip wget
 
       - name: Download bundletool
         run: |
@@ -32,7 +32,7 @@ jobs:
         run: |
           wget https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Create module
+      - name: Extract APK
         run: |
           unzip app.apk -d module
           cd module
@@ -47,5 +47,5 @@ jobs:
       - name: Upload AAB
         uses: actions/upload-artifact@v3
         with:
-          name: aab-file
+          name: app-aab
           path: app.aab
