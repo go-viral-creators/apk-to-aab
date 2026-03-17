@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Debug Mode)
+name: APK to AAB Converter (Final Protocol)
 
 on:
   workflow_dispatch:
@@ -20,49 +20,43 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Download and Debug Files
+      - name: Secure Download (API Method)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # AAPT2 Setup
+          # 1. AAPT2 Path Setup
           sdkmanager "build-tools;34.0.0"
-          echo "$ANDROID_HOME/build-tools;34.0.0" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
           
-          echo "--- STARTING DOWNLOADS ---"
+          # 2. Bundletool Download (Official GitHub CLI Method)
+          # Isse HTML download hone ka khatra 0% hai
+          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar
           
-          # Bundletool download (Fixed URL)
-          curl -L -o bundletool.jar "https://github.com"
+          # 3. APK Download (Aapki Repo se)
+          # Agar 'v1' tag hai, toh ye sahi file uthayega
+          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
           
-          # APK Download (Explicit Headers ke saath)
-          URL="https://github.com"
-          curl -L -H "User-Agent: Mozilla/5.0" -H "Accept: application/octet-stream" -o app.apk "$URL"
-          
-          echo "--- DEBUG INFO ---"
-          echo "File Size Info:"
+          # Final Verification
+          echo "--- Verification ---"
           ls -lh app.apk bundletool.jar
-          
-          echo "File Type Check:"
           file app.apk
           file bundletool.jar
-          
-          echo "File Content Preview (First 5 lines):"
-          head -n 5 app.apk | cut -c1-100
-          
-          # Agar file 'PK' se start nahi ho rahi, matlab wo ZIP/APK nahi hai
-          if [[ $(head -c 2 app.apk) != "PK" ]]; then
-            echo "ERROR: app.apk is NOT a valid ZIP/APK file (HTML detect hua hai)."
-            exit 1
-          fi
 
-      - name: Process and Convert
+      - name: Extract and AAPT2 Convert
         run: |
-          # Extract and Convert
+          # APK contents extract karein
           unzip -o app.apk -d apk_contents
+          
+          # AAPT2 convert (APK to Proto)
           aapt2 convert --output-format proto app.apk -o converted_resources.zip
           unzip -o converted_resources.zip -d proto_out/
           cp proto_out/resources.pb ./resources.pb
 
-      - name: Build AAB Structure
+      - name: Create AAB Structure
         run: |
           mkdir -p base/manifest base/dex base/res base/lib base/assets
+          
+          # Resources and Manifest
           [ -f "apk_contents/AndroidManifest.xml" ] && cp apk_contents/AndroidManifest.xml base/manifest/
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/res" ] && cp -r apk_contents/res base/
@@ -70,12 +64,16 @@ jobs:
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
           [ -f "resources.pb" ] && cp resources.pb base/
           
-          # Zip and Build
+          # ZIP module for bundletool
           cd base && zip -r ../module.zip ./* && cd ..
+
+      - name: Build Final AAB
+        run: |
+          # Is bar bundletool valid jar hoga toh error nahi aayega
           java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
 
-      - name: Upload Result
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: converted-aab
+          name: converted-aab-file
           path: app.aab
