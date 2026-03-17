@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Working)
+name: APK to AAB Converter (Fixed)
 
 on:
   workflow_dispatch:
@@ -20,75 +20,58 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install AAPT2 & Build Tools
+      - name: Install AAPT2 & Tools
         run: |
+          # Build tools install aur PATH set up
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
-
-            - name: Download APK & Tools
-          # -L flag redirect handle karne ke liye zaroori hai
+          
+          # Tools download using curl -L (Robust method)
           curl -L -o app.apk "https://github.com"
           curl -L -o bundletool.jar "https://github.com"
           
-          # Check karo ki file download hui ya nahi
-          ls -lh app.apk
+          # Check if APK is valid
           file app.apk
 
-      - name: Extract APK Contents
+      - name: Extract APK and Convert to Proto
         run: |
-          # Agar file corrupted hai to ye step fail hone se pehle check karega
-          if unzip -t app.apk; then
-            unzip -o app.apk -d apk_contents
-          else
-            echo "Error: Downloaded APK is corrupted or not a valid zip file."
-            exit 1
-          fi
-
-
-      - name: Convert APK to Proto Format (AAPT2)
-        run: |
-          # AAPT2 direct APK ko convert karega taaki resources.pb mil sake
+          # APK contents extract karein
+          unzip -o app.apk -d apk_contents
+          
+          # AAPT2 se resources.pb generate karein
           aapt2 convert --output-format proto app.apk -o converted_resources.zip
           unzip -o converted_resources.zip -d proto_out/
-          # resources.pb ko main root mein move karein
+          
           if [ -f "proto_out/resources.pb" ]; then
             cp proto_out/resources.pb ./resources.pb
-            echo "Resources converted successfully."
+            echo "AAPT2 conversion successful."
           fi
 
       - name: Create AAB Structure
         run: |
-          mkdir -p base/manifest base/dex base/root base/res base/lib base/assets
+          mkdir -p base/manifest base/dex base/res base/lib base/assets
           
-          # Manifest and Resources
-          if [ -f "apk_contents/AndroidManifest.xml" ]; then
-            cp apk_contents/AndroidManifest.xml base/manifest/
-          fi
-          
-          # Copying other components
+          # Essential files copy karein
+          [ -f "apk_contents/AndroidManifest.xml" ] && cp apk_contents/AndroidManifest.xml base/manifest/
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/res" ] && cp -r apk_contents/res base/
           [ -d "apk_contents/lib" ] && cp -r apk_contents/lib base/
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
           
-          # IMPORTANT: Bundletool expects resources.pb in the module root
+          # Resources.pb ko root mein rakhna bundletool ke liye zaruri hai
           [ -f "resources.pb" ] && cp resources.pb base/
           
-          echo "Base directory structure check:"
+          echo "Final Structure Check:"
           ls -R base | head -n 20
 
-      - name: Create Module ZIP
+      - name: Build Final AAB
         run: |
+          # Base directory ko zip karke bundletool se AAB banayein
           cd base && zip -r ../module.zip ./* && cd ..
-
-      - name: Build AAB
-        run: |
-          java -jar bundletool.jar build-bundle \
-            --modules=module.zip \
-            --output=app.aab
+          java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: app-aab
+          name: converted-app-aab
           path: app.aab
