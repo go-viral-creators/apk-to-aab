@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Final Fix)
+name: APK to AAB Converter (Final Working)
 
 on:
   workflow_dispatch:
@@ -21,27 +21,28 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install AAPT2 & Tools
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # AAPT2 Setup
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
           
-          # Bundletool with -L (to follow redirects)
-          curl -L -o bundletool.jar "https://github.com"
+          # Bundletool download (Using gh for reliability)
+          gh release download --repo google/bundletool --pattern "bundletool-all-1.17.2.jar" --output bundletool.jar
           
-          # ASLI FIX YAHAN HAI: GitHub Releases se download karne ke liye -L aur correct headers zaroori hain
-          curl -L -H "Accept: application/octet-stream" -o app.apk "https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk"
+          # APK Download (Using gh for your repo)
+          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
           
-          # Check file size (Agar ye > 1MB hai toh sahi download hui hai)
-          ls -lh app.apk
-          file app.apk
+          # Debug: File check (Ab size sahi dikhayega)
+          ls -lh bundletool.jar app.apk
 
-      - name: Extract and Convert (AAPT2)
+      - name: Process Resources and Convert
         run: |
-          # Extract APK
+          # APK Extract
           unzip -o app.apk -d apk_contents
           
-          # Convert to Proto
+          # AAPT2 Conversion
           aapt2 convert --output-format proto app.apk -o converted_resources.zip
           unzip -o converted_resources.zip -d proto_out/
           cp proto_out/resources.pb ./resources.pb
@@ -50,6 +51,7 @@ jobs:
         run: |
           mkdir -p base/manifest base/dex base/res base/lib base/assets
           
+          # Files Copying
           [ -f "apk_contents/AndroidManifest.xml" ] && cp apk_contents/AndroidManifest.xml base/manifest/
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/res" ] && cp -r apk_contents/res base/
@@ -57,11 +59,12 @@ jobs:
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
           [ -f "resources.pb" ] && cp resources.pb base/
           
-          # Zip it up
+          # Zip Module
           cd base && zip -r ../module.zip ./* && cd ..
 
-      - name: Build AAB
+      - name: Build Final AAB
         run: |
+          # Ab bundletool sahi chalega
           java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
 
       - name: Upload AAB
