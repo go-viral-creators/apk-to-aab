@@ -26,7 +26,6 @@ jobs:
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
 
             - name: Download APK & Tools
-        run: |
           # -L flag redirect handle karne ke liye zaroori hai
           curl -L -o app.apk "https://github.com"
           curl -L -o bundletool.jar "https://github.com"
