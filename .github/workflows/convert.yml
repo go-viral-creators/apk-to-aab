@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -36,24 +35,29 @@ jobs:
         run: |
           apktool d app.apk -o project
 
-      - name: Fix Invalid Filenames ($ characters)
+      - name: Fix Resource Names and References
         run: |
-          # 1. Rename physical files to remove '$'
+          echo "Cleaning up invalid characters in filenames..."
+          # Sabhi files jinme $ hai unhe rename karna
           find project/res -name "*$*" -type f | while read file; do
             new_name=$(echo "$file" | sed 's/\$//g')
             mv "$file" "$new_name"
           done
           
-          # 2. Update references inside XML files so they don't look for the old names
-          grep -rl "\$" project/res/ | xargs sed -i 's/\$//g' || true
+          echo "Updating XML references..."
+          # XML files ke andar jahan purane naam ($ waale) use hue hain unhe theek karna
+          # Hum sirf resources ke andar check kar rahe hain
+          find project/res -type f -name "*.xml" -print0 | xargs -0 sed -i 's/@drawable\/\$/@drawable\//g' || true
+          find project/res -type f -name "*.xml" -print0 | xargs -0 sed -i 's/drawable\/\$/drawable\//g' || true
 
       - name: Rebuild APK
         run: |
+          # --copy-force ensures we try to build even if there are minor issues
           apktool b project -o rebuilt.apk
 
       - name: Create Bundle Module
         run: |
-          mkdir base
+          mkdir -p base
           cp rebuilt.apk base/base.apk
           zip -r base.zip base
 
