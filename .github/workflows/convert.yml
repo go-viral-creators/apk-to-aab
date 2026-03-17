@@ -9,7 +9,7 @@ jobs:
 
     steps:
 
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -21,30 +21,38 @@ jobs:
       - name: Install tools
         run: |
           sudo apt update
-          sudo apt install -y unzip zip wget
+          sudo apt install -y apktool wget zip unzip
+
+      - name: Download APK
+        run: |
+          wget https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
+
+      - name: Decode APK
+        run: |
+          apktool d app.apk -o project
+
+      - name: Rebuild APK
+        run: |
+          apktool b project -o rebuilt.apk
 
       - name: Download bundletool
         run: |
           wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
           mv bundletool-all-1.17.2.jar bundletool.jar
 
-      - name: Download APK
+      - name: Create module
         run: |
-          wget https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
-
-      - name: Extract APK
-        run: |
-          unzip app.apk -d module
-          cd module
-          zip -r base.zip *
+          mkdir base
+          cp rebuilt.apk base/base.apk
+          zip -r base.zip base
 
       - name: Build AAB
         run: |
           java -jar bundletool.jar build-bundle \
-          --modules=module/base.zip \
+          --modules=base.zip \
           --output=app.aab
 
-      - name: Upload artifact
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: app-aab
