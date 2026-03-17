@@ -1,4 +1,4 @@
-name: APK to AAB
+name: APK to AAB Converter
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ jobs:
 
     steps:
 
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -23,9 +23,18 @@ jobs:
           sudo apt update
           sudo apt install -y apktool wget zip unzip
 
+      - name: Download bundletool
+        run: |
+          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
+          mv bundletool-all-1.17.2.jar bundletool.jar
+
       - name: Download APK
         run: |
-          wget https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
+          wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
+
+      - name: Show files
+        run: |
+          ls -lh
 
       - name: Decode APK
         run: |
@@ -35,12 +44,7 @@ jobs:
         run: |
           apktool b project -o rebuilt.apk
 
-      - name: Download bundletool
-        run: |
-          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
-          mv bundletool-all-1.17.2.jar bundletool.jar
-
-      - name: Create module
+      - name: Create Bundle Module
         run: |
           mkdir base
           cp rebuilt.apk base/base.apk
@@ -52,7 +56,7 @@ jobs:
           --modules=base.zip \
           --output=app.aab
 
-      - name: Upload AAB
+      - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-aab
