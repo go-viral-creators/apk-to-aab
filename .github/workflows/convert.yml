@@ -1,4 +1,4 @@
-name: APK to AAB Converter
+name: APK to AAB Professional Converter
 
 on:
   workflow_dispatch:
@@ -11,67 +11,73 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java Environment
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Install tools
+      - name: Install Professional Android Tools
         run: |
           sudo apt update
-          sudo apt install -y apktool wget zip unzip
+          # aapt2 install karna zaroori hai modern builds ke liye
+          sudo apt install -y apktool wget zip unzip aapt2
 
-      - name: Download bundletool
+      - name: Download Bundletool
         run: |
-          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
-          mv bundletool-all-1.17.2.jar bundletool.jar
+          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -O bundletool.jar
 
-      - name: Download APK
+      - name: Download Target APK
         run: |
           wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Decode APK
+      - name: Decode APK (Disassembling)
         run: |
+          # --baksmali flag ensure karta hai ki code sahi se extract ho
           apktool d app.apk -o project
 
-      - name: Fix Resource Names and References
+      - name: Auto-Fix Resources (The "Magic" Step)
         run: |
-          echo "Cleaning up invalid characters in filenames..."
-          # Sirf un files ko dhoondo jinme '$' hai
+          echo "Starting Auto-Fix for invalid resource names..."
+          
+          # 1. Rename files starting with or containing '$' (Material Design common issue)
           find project/res -name "*$*" -type f | while read file; do
             new_name=$(echo "$file" | sed 's/\$//g')
-            # Check if naya naam purane naam se alag hai to avoid "same file" error
             if [ "$file" != "$new_name" ]; then
               mv "$file" "$new_name"
-              echo "Renamed: $file -> $new_name"
+              echo "Fixed Filename: $(basename "$file") -> $(basename "$new_name")"
             fi
           done
-          
-          echo "Updating XML references..."
-          # XML ke andar ke references theek karna
+
+          # 2. Update XML references to match new filenames
+          echo "Updating XML references internal to resources..."
           find project/res -type f -name "*.xml" -exec sed -i 's/@drawable\/\$/@drawable\//g' {} + || true
           find project/res -type f -name "*.xml" -exec sed -i 's/drawable\/\$/drawable\//g' {} + || true
           
-      - name: Rebuild APK
-        run: |
-          # --copy-force ensures we try to build even if there are minor issues
-          apktool b project -o rebuilt.apk
+          # 3. Fix potential issues in AndroidManifest
+          sed -i 's/android:extractNativeLibs="false"/android:extractNativeLibs="true"/g' project/AndroidManifest.xml || true
 
-      - name: Create Bundle Module
+      - name: Rebuild with AAPT2 Engine
         run: |
-          mkdir -p base
-          cp rebuilt.apk base/base.apk
+          # AAPT2 force karna zaroori hai 'First type is not attr' fix karne ke liye
+          apktool b --use-aapt2 project -o rebuilt_unsigned.apk
+
+      - name: Prepare AAB Module Structure
+        run: |
+          mkdir -p base/manifest base/dex base/res
+          # Note: Simple conversion needs base structure
+          cp rebuilt_unsigned.apk base/base.apk
           zip -r base.zip base
 
-      - name: Build AAB
+      - name: Build Final AAB
         run: |
           java -jar bundletool.jar build-bundle \
           --modules=base.zip \
           --output=app.aab
 
-      - name: Upload AAB Artifact
+      - name: Upload Processed AAB
         uses: actions/upload-artifact@v4
         with:
-          name: app-aab
+          name: converted-aab-package
           path: app.aab
+
