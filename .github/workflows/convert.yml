@@ -25,14 +25,26 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
 
-      - name: Download APK & Tools
+            - name: Download APK & Tools
         run: |
-          wget -O app.apk https://github.com
-          wget -O bundletool.jar https://github.com
+          # -L flag redirect handle karne ke liye zaroori hai
+          curl -L -o app.apk "https://github.com"
+          curl -L -o bundletool.jar "https://github.com"
+          
+          # Check karo ki file download hui ya nahi
+          ls -lh app.apk
+          file app.apk
 
       - name: Extract APK Contents
         run: |
-          unzip app.apk -d apk_contents
+          # Agar file corrupted hai to ye step fail hone se pehle check karega
+          if unzip -t app.apk; then
+            unzip -o app.apk -d apk_contents
+          else
+            echo "Error: Downloaded APK is corrupted or not a valid zip file."
+            exit 1
+          fi
+
 
       - name: Convert APK to Proto Format (AAPT2)
         run: |
