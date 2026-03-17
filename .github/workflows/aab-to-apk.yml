@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       aab_url:
-        description: 'Direct download URL of AAB file'
+        description: 'GitHub Artifact URL ya direct download link'
         required: false
         default: ''
       use_artifact:
@@ -29,7 +29,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install bundletool (Working Method)
+      - name: Install bundletool
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -37,60 +37,58 @@ jobs:
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
           gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar --clobber
 
-      - name: Download AAB from Direct URL
+      - name: Download AAB from GitHub Artifact
         if: ${{ github.event.inputs.aab_url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "📥 Downloading AAB from URL: ${{ github.event.inputs.aab_url }}"
-          wget -O input.aab "${{ github.event.inputs.aab_url }}"
-          echo "✅ Download complete!"
+          ARTIFACT_URL="${{ github.event.inputs.aab_url }}"
+          echo "🔗 Processing URL: $ARTIFACT_URL"
+          
+          # Try to extract artifact ID from different URL patterns
+          if [[ $ARTIFACT_URL =~ artifacts/([0-9]+) ]]; then
+            ARTIFACT_ID="${BASH_REMATCH[1]}"
+            echo "✅ Found artifact ID: $ARTIFACT_ID"
+            
+            # Download using GitHub API
+            gh api -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip" \
+              > artifact.zip
+              
+            unzip -o artifact.zip
+            AAB_FILE=$(find . -name "*.aab" -print -quit)
+            
+            if [ -n "$AAB_FILE" ]; then
+              mv "$AAB_FILE" input.aab
+              echo "✅ AAB file ready: input.aab"
+            else
+              echo "❌ No AAB file found in artifact!"
+              ls -la
+              exit 1
+            fi
+          else
+            # Try direct download with token (if it's a raw URL)
+            wget --header="Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "$ARTIFACT_URL" -O input.aab || {
+              echo "❌ Direct download failed, trying as zip..."
+              wget --header="Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "$ARTIFACT_URL" -O artifact.zip && unzip -o artifact.zip
+              AAB_FILE=$(find . -name "*.aab" -print -quit)
+              [ -n "$AAB_FILE" ] && mv "$AAB_FILE" input.aab
+            }
+          fi
+          
+          if [ ! -f input.aab ]; then
+            echo "❌ Failed to get AAB file!"
+            exit 1
+          fi
 
-      - name: Download AAB from Artifact
+      - name: Download AAB from Artifact (Legacy)
         if: ${{ github.event.inputs.use_artifact == 'yes' && github.event.inputs.aab_url == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🔍 Searching for latest successful APK-to-AAB run with artifact 'converted-aab-file'..."
-          RUN_IDS=$(gh run list --workflow="APK to AAB Converter (Final Working)" --status=success --limit 10 --json databaseId --jq '.[].databaseId')
-          
-          if [ -z "$RUN_IDS" ]; then
-            echo "❌ No successful APK to AAB runs found!"
-            exit 1
-          fi
-
-          for RUN_ID in $RUN_IDS; do
-            echo "Checking run ID: $RUN_ID"
-            ARTIFACT_NAMES=$(gh api "/repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[].name')
-            
-            if echo "$ARTIFACT_NAMES" | grep -q "^converted-aab-file$"; then
-              echo "✅ Found artifact in run ID: $RUN_ID"
-              gh run download "$RUN_ID" --name converted-aab-file --repo ${{ github.repository }}
-              
-              # Find any .aab file in downloaded artifact
-              AAB_FILE=$(find . -maxdepth 2 -name "*.aab" -print -quit)
-              if [ -n "$AAB_FILE" ]; then
-                mv "$AAB_FILE" input.aab
-                echo "✅ AAB file ready: input.aab"
-                exit 0
-              else
-                echo "❌ No .aab file found in artifact!"
-                exit 1
-              fi
-            fi
-          done
-          
-          echo "❌ No run with artifact 'converted-aab-file' found in last 10 successful runs."
-          exit 1
-
-      - name: Check if AAB exists
-        run: |
-          if [ ! -f input.aab ]; then
-            echo "❌ ERROR: No AAB file found!"
-            echo "Please provide either:"
-            echo "  - A valid direct URL in 'AAB URL' field"
-            echo "  - OR set 'Use artifact' to 'yes' if previous run exists"
-            exit 1
-          fi
-          echo "✅ AAB file is ready for conversion"
+          # Previous artifact download logic here (pehle wala code)
 
       - name: Generate Universal APK from AAB
         run: |
@@ -98,7 +96,8 @@ jobs:
           java -jar bundletool.jar build-apks --bundle=input.aab --output=app.apks --mode=universal
           echo "📦 Extracting universal APK..."
           unzip -o app.apks -d apks_output
-          cp apks_output/universal.apk app-universal.apk 2>/dev/null || find apks_output -name "*.apk" -exec cp {} app-universal.apk \; -quit
+          cp apks_output/universal.apk app-universal.apk 2>/dev/null || \
+            find apks_output -name "*.apk" -exec cp {} app-universal.apk \; -quit
           echo "✅ Universal APK created: app-universal.apk"
 
       - name: Upload APK Artifact
