@@ -22,79 +22,46 @@ jobs:
 
       - name: Install AAPT2 & Build Tools
         run: |
-          # Build tools install kar rahe hain jisme aapt2 hota hai
           sdkmanager "build-tools;34.0.0"
-          # AAPT2 ko direct access karne ke liye PATH mein add kar rahe hain
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
 
-      - name: Verify AAPT2
-        run: aapt2 version
-
-      - name: Download APK
+      - name: Download APK & Tools
         run: |
-          wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
-
-      - name: Download Bundletool
-        run: |
-          wget -O bundletool.jar https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
+          wget -O app.apk https://github.com
+          wget -O bundletool.jar https://github.com
 
       - name: Extract APK Contents
         run: |
           unzip app.apk -d apk_contents
-          ls -la apk_contents/
 
-      - name: Get Android SDK Version
-        id: sdk
+      - name: Convert APK to Proto Format (AAPT2)
         run: |
-          if [ -f "apk_contents/AndroidManifest.xml" ]; then
-            minSdk=$(grep -o 'minSdkVersion="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "21")
-            targetSdk=$(grep -o 'targetSdkVersion="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "33")
-            versionCode=$(grep -o 'versionCode="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "1")
-            versionName=$(grep -o 'versionName="[^"]*"' apk_contents/AndroidManifest.xml | sed 's/versionName="//' | sed 's/"//' || echo "1.0")
-            
-            echo "minSdk=$minSdk" >> $GITHUB_OUTPUT
-            echo "targetSdk=$targetSdk" >> $GITHUB_OUTPUT
-            echo "versionCode=$versionCode" >> $GITHUB_OUTPUT
-            echo "versionName=$versionName" >> $GITHUB_OUTPUT
-          else
-            echo "minSdk=21" >> $GITHUB_OUTPUT
-            echo "targetSdk=33" >> $GITHUB_OUTPUT
-            echo "versionCode=1" >> $GITHUB_OUTPUT
-            echo "versionName=1.0" >> $GITHUB_OUTPUT
-          fi
-
-            - name: Convert APK resources to protobuf
-          # Individual file ke bajaye poori APK file pass karein
-          if [ -f "app.apk" ]; then
-            aapt2 convert --output-format proto app.apk -o converted_resources.zip
-            
-            # Converted resources ko extract karein taaki base structure mein use kar saken
-            mkdir -p proto_contents
-            unzip converted_resources.zip -d proto_contents/
-            
-            # resources.pb ko main location par le aayein
-            if [ -f "proto_contents/resources.pb" ]; then
-              cp proto_contents/resources.pb resources.pb
-              echo "Resources converted to proto successfully"
-            fi
-          else
-            echo "app.apk not found!"
-            exit 1
+          # AAPT2 direct APK ko convert karega taaki resources.pb mil sake
+          aapt2 convert --output-format proto app.apk -o converted_resources.zip
+          unzip -o converted_resources.zip -d proto_out/
+          # resources.pb ko main root mein move karein
+          if [ -f "proto_out/resources.pb" ]; then
+            cp proto_out/resources.pb ./resources.pb
+            echo "Resources converted successfully."
           fi
 
       - name: Create AAB Structure
         run: |
           mkdir -p base/manifest base/dex base/root base/res base/lib base/assets
           
+          # Manifest and Resources
           if [ -f "apk_contents/AndroidManifest.xml" ]; then
             cp apk_contents/AndroidManifest.xml base/manifest/
           fi
           
+          # Copying other components
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/res" ] && cp -r apk_contents/res base/
           [ -d "apk_contents/lib" ] && cp -r apk_contents/lib base/
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
-          [ -f "resources.pb" ] && cp resources.pb base/root/
+          
+          # IMPORTANT: Bundletool expects resources.pb in the module root
+          [ -f "resources.pb" ] && cp resources.pb base/
           
           echo "Base directory structure check:"
           ls -R base | head -n 20
