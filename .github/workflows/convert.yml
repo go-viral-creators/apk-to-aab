@@ -63,15 +63,24 @@ jobs:
             echo "versionName=1.0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Convert resources.arsc to protobuf
+            - name: Convert APK resources to protobuf
         run: |
-          # AAPT2 ka use karke resources convert karein
-          if [ -f "apk_contents/resources.arsc" ]; then
-            # compile and link approach is better for AAB, but convert is also used
-            aapt2 convert --output-format proto apk_contents/resources.arsc -o resources.pb
-            echo "Resources converted successfully"
+          # Individual file ke bajaye poori APK file pass karein
+          if [ -f "app.apk" ]; then
+            aapt2 convert --output-format proto app.apk -o converted_resources.zip
+            
+            # Converted resources ko extract karein taaki base structure mein use kar saken
+            mkdir -p proto_contents
+            unzip converted_resources.zip -d proto_contents/
+            
+            # resources.pb ko main location par le aayein
+            if [ -f "proto_contents/resources.pb" ]; then
+              cp proto_contents/resources.pb resources.pb
+              echo "Resources converted to proto successfully"
+            fi
           else
-            echo "resources.arsc not found"
+            echo "app.apk not found!"
+            exit 1
           fi
 
       - name: Create AAB Structure
