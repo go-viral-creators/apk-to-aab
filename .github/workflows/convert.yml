@@ -64,7 +64,6 @@ jobs:
           fi
 
             - name: Convert APK resources to protobuf
-        run: |
           # Individual file ke bajaye poori APK file pass karein
           if [ -f "app.apk" ]; then
             aapt2 convert --output-format proto app.apk -o converted_resources.zip
