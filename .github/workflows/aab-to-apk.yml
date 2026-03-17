@@ -29,11 +29,14 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install bundletool
+      - name: Secure Download (API Method)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "build-tools;34.0.0"
-          wget https://github.com/google/bundletool/releases/latest/download/bundletool-all.jar -O bundletool.jar
-
+          echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
+          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar
+          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
       - name: Download AAB
         run: |
           if [ "${{ github.event.inputs.use_artifact }}" = "yes" ]; then
