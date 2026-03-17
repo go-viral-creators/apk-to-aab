@@ -1,4 +1,4 @@
-name: APK to AAB Professional Converter
+name: APK to AAB Converter
 
 on:
   workflow_dispatch:
@@ -11,69 +11,40 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Java Environment
-        [span_0](start_span)uses: actions/setup-java@v4[span_0](end_span)
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          [span_1](start_span)java-version: '17'[span_1](end_span)
+          distribution: temurin
+          java-version: 17
 
-      - name: Install Tools
+      - name: Install tools
         run: |
           sudo apt update
-          [span_2](start_span)sudo apt install -y apktool wget zip unzip[span_2](end_span)
-          
-          # AAPT2 ko manual locate karke system path mein add karna
-          AAPT2_PATH=$(find $ANDROID_SDK_ROOT/build-tools -name aapt2 -type f | sort -V | tail -n 1)
-          sudo ln -s "$AAPT2_PATH" /usr/local/bin/aapt2
-          echo "AAPT2 located at: $AAPT2_PATH"
+          sudo apt install -y wget zip unzip
 
-      - name: Download Bundletool
+      - name: Download bundletool
         run: |
-          [span_3](start_span)wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -O bundletool.jar[span_3](end_span)
+          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
+          mv bundletool-all-1.17.2.jar bundletool.jar
 
-      - name: Download Target APK
+      - name: Download APK
         run: |
-          [span_4](start_span)wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk[span_4](end_span)
+          wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Decode APK
+      - name: Prepare base module
         run: |
-          [span_5](start_span)apktool d app.apk -o project[span_5](end_span)
+          mkdir -p base
+          cp app.apk base/base.apk
+          cd base && zip -r ../base.zip .
 
-      - name: Auto-Fix Resources
-        run: |
-          echo "Cleaning invalid characters..."
-          # Rename files with '$'
-          find project/res -name "*$*" -type f | while read file; do
-            new_name=$(echo "$file" | sed 's/\$//g')
-            if [ "$file" != "$new_name" ]; then
-              mv "$file" "$new_name"
-            fi
-          done
-
-          # Update XML references
-          find project/res -type f -name "*.xml" -exec sed -i 's/@drawable\/\$/@drawable\//g' {} + || true
-          find project/res -type f -name "*.xml" -exec sed -i 's/drawable\/\$/drawable\//g' {} + || true
-
-      - name: Rebuild with AAPT2 Engine
-        run: |
-          # explicitly aapt2 path provide karna agar apktool na dhund paaye
-          [span_6](start_span)apktool b --use-aapt2 project -o rebuilt_unsigned.apk[span_6](end_span)
-
-      - name: Create Bundle Structure
-        run: |
-          mkdir -p base/manifest base/dex base/res
-          [span_7](start_span)cp rebuilt_unsigned.apk base/base.apk[span_7](end_span)
-          [span_8](start_span)zip -r base.zip base[span_8](end_span)
-
-      - name: Build Final AAB
+      - name: Build AAB
         run: |
           java -jar bundletool.jar build-bundle \
-          --modules=base.zip \
-          -[span_9](start_span)-output=app.aab[span_9](end_span)
+            --modules=base.zip \
+            --output=app.aab
 
-      - name: Upload AAB
+      - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: converted-aab
+          name: app-aab
           path: app.aab
-          
