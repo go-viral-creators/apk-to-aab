@@ -1,51 +1,30 @@
-name: APK to AAB
+name: Convert APK to AAB
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   convert:
     runs-on: ubuntu-latest
-
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Get entire history (set to 1 if you don't need all history)
 
-      - name: Install Java
+      # Add your actual build and conversion steps here
+      # Example placeholder
+      - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Install tools
-        run: |
-          sudo apt update
-          sudo apt install -y apktool zip unzip wget
-
-      - name: Download bundletool
-        run: |
-          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
-          mv bundletool-all-1.17.2.jar bundletool.jar
-
-      - name: Decode APK
-        run: |
-          apktool d app.apk -o project
-
-      - name: Create Gradle Project
-        run: |
-          mkdir build
-          cp -r project/* build/
-
-      - name: Build AAB
-        run: |
-          cd build
-          zip -r module.zip *
-          cd ..
-          java -jar bundletool.jar build-bundle --modules=build/module.zip --output=app.aab
-
-      - name: Upload AAB
-        uses: actions/upload-artifact@v3
-        with:
-          name: app-aab
-          path: app.aab
+          java-version: '17'
+          distribution: 'adopt'
+      
+      # Add your build/conversion/script step here
+      # - name: Build/Convert
+      #   run: ./convert-script.sh
