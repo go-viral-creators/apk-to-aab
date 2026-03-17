@@ -3,15 +3,15 @@ name: AAB to APK Converter (Working)
 on:
   workflow_dispatch:
     inputs:
-      aab_url:
-        description: 'GitHub Artifact URL ya direct download link'
-        required: false
-        default: ''
-      use_artifact:
-        description: 'Use AAB from previous workflow artifact? (yes/no)'
+      file_url:
+        description: 'Direct URL of AAB file'
         required: true
-        default: 'no'
-
+        type: string
+      mode:
+        description: 'Conversion mode'
+        required: false
+        default: 'aab-to-apk'
+        type: string
 jobs:
   convert:
     runs-on: ubuntu-latest
