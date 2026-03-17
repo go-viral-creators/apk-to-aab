@@ -38,11 +38,11 @@ jobs:
           gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar --clobber
 
       - name: Download AAB from GitHub Artifact
-        if: ${{ github.event.inputs.aab_url != '' }}
+        if: ${{ github.event.inputs.file_url != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ARTIFACT_URL="${{ github.event.inputs.aab_url }}"
+          ARTIFACT_URL="${{ github.event.inputs.file_url }}"
           echo "🔗 Processing URL: $ARTIFACT_URL"
           
           # Try to extract artifact ID from different URL patterns
@@ -84,7 +84,7 @@ jobs:
           fi
 
       - name: Download AAB from Artifact (Legacy)
-        if: ${{ github.event.inputs.use_artifact == 'yes' && github.event.inputs.aab_url == '' }}
+        if: ${{ github.event.inputs.use_artifact == 'yes' && github.event.inputs.file_url == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
