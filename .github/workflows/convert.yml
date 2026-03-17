@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Manual Method)
+name: APK to AAB Converter (Working)
 
 on:
   workflow_dispatch:
@@ -17,104 +17,126 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install Required Tools
+      - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y wget unzip zip aapt2 xmlstarlet
+          sudo apt install -y wget unzip zip aapt2
 
       - name: Download APK
         run: |
           wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Download Apktool
-        run: |
-          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
-
       - name: Download Bundletool
         run: |
           wget -O bundletool.jar https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
 
-      # Extract APK using apktool (keeping dex files with -s flag)
-      - name: Decode APK (keep dex)
+      - name: Extract APK Contents
         run: |
-          java -jar apktool.jar d app.apk -s -o decompile -f
+          # APK ko unzip karo
+          unzip app.apk -d apk_contents
+          
+          # Check karo ki files sahi se extract hui
+          ls -la apk_contents/
 
-      # Get manifest values using aapt2
-      - name: Extract Manifest Values
-        id: manifest
+      - name: Get Android SDK Version
+        id: sdk
         run: |
-          # Dump manifest in human-readable format
-          aapt2 dump manifest decompile/AndroidManifest.xml > manifest.txt
-          # Extract values
-          minSdk=$(grep -oP 'minSdk:\K\d+' manifest.txt || echo "1")
-          targetSdk=$(grep -oP 'targetSdk:\K\d+' manifest.txt || echo "1")
-          versionCode=$(grep -oP 'versionCode:\K\d+' manifest.txt || echo "1")
-          versionName=$(grep -oP "versionName:'\K[^']+" manifest.txt || echo "1.0")
-          echo "minSdk=$minSdk" >> $GITHUB_OUTPUT
-          echo "targetSdk=$targetSdk" >> $GITHUB_OUTPUT
-          echo "versionCode=$versionCode" >> $GITHUB_OUTPUT
-          echo "versionName=$versionName" >> $GITHUB_OUTPUT
-
-      # Download android.jar for the target SDK from Google's Maven
-      - name: Download android.jar
-        run: |
-          targetSdk="${{ steps.manifest.outputs.targetSdk }}"
-          # If targetSdk not found, default to 30
-          if [ -z "$targetSdk" ] || [ "$targetSdk" = "1" ]; then
-            targetSdk=30
+          # AndroidManifest.xml se minSdkVersion nikaalo
+          if [ -f "apk_contents/AndroidManifest.xml" ]; then
+            # XML parse karo (simple grep se)
+            minSdk=$(grep -o 'minSdkVersion="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "21")
+            targetSdk=$(grep -o 'targetSdkVersion="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "33")
+            versionCode=$(grep -o 'versionCode="[0-9]*"' apk_contents/AndroidManifest.xml | grep -o '[0-9]*' || echo "1")
+            versionName=$(grep -o 'versionName="[^"]*"' apk_contents/AndroidManifest.xml | sed 's/versionName="//' | sed 's/"//' || echo "1.0")
+            
+            echo "minSdk=$minSdk" >> $GITHUB_OUTPUT
+            echo "targetSdk=$targetSdk" >> $GITHUB_OUTPUT
+            echo "versionCode=$versionCode" >> $GITHUB_OUTPUT
+            echo "versionName=$versionName" >> $GITHUB_OUTPUT
+          else
+            echo "minSdk=21" >> $GITHUB_OUTPUT
+            echo "targetSdk=33" >> $GITHUB_OUTPUT
+            echo "versionCode=1" >> $GITHUB_OUTPUT
+            echo "versionName=1.0" >> $GITHUB_OUTPUT
           fi
-          wget -O android.jar https://dl.google.com/android/maven2/android/platforms/android-${targetSdk}/android.jar || \
-          wget -O android.jar https://dl.google.com/android/repository/android-${targetSdk}/android.jar
 
-      # Compile resources with aapt2
-      - name: Compile Resources
+      - name: Convert resources.arsc to protobuf
         run: |
-          aapt2 compile --dir decompile/res -o res.zip
+          # resources.arsc ko protobuf mein convert karo
+          if [ -f "apk_contents/resources.arsc" ]; then
+            aapt2 convert --output-format proto apk_contents/resources.arsc -o resources.pb
+            echo "Resources converted successfully"
+          else
+            echo "resources.arsc not found, creating empty resources.pb"
+            touch resources.pb
+          fi
 
-      # Link resources to create base.zip (proto format)
-      - name: Link Resources
+      - name: Create AAB Structure
         run: |
-          aapt2 link --proto-format -o base.zip \
-            -I android.jar \
-            --manifest decompile/AndroidManifest.xml \
-            --min-sdk-version ${{ steps.manifest.outputs.minSdk }} \
-            --target-sdk-version ${{ steps.manifest.outputs.targetSdk }} \
-            --version-code ${{ steps.manifest.outputs.versionCode }} \
-            --version-name "${{ steps.manifest.outputs.versionName }}" \
-            -R res.zip \
-            --auto-add-overlay
+          # Base directory banao
+          mkdir -p base/manifest
+          mkdir -p base/dex
+          mkdir -p base/root
+          mkdir -p base/res
+          mkdir -p base/lib
+          mkdir -p base/assets
+          
+          # Manifest copy karo
+          if [ -f "apk_contents/AndroidManifest.xml" ]; then
+            cp apk_contents/AndroidManifest.xml base/manifest/
+          else
+            echo "<?xml version=\"1.0\" encoding=\"utf-8\"?><manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"com.example.app\"></manifest>" > base/manifest/AndroidManifest.xml
+          fi
+          
+          # Dex files copy karo
+          cp apk_contents/*.dex base/dex/ 2>/dev/null || echo "No dex files found"
+          
+          # Resources copy karo
+          if [ -d "apk_contents/res" ]; then
+            cp -r apk_contents/res base/
+          fi
+          
+          # Libs copy karo
+          if [ -d "apk_contents/lib" ]; then
+            cp -r apk_contents/lib base/
+          fi
+          
+          # Assets copy karo
+          if [ -d "apk_contents/assets" ]; then
+            cp -r apk_contents/assets base/
+          fi
+          
+          # Converted resources.pb root mein daalo
+          if [ -f "resources.pb" ]; then
+            cp resources.pb base/root/
+          fi
+          
+          # Baki files root mein daalo (except jo already copy ho chuki hain)
+          for file in apk_contents/*; do
+            filename=$(basename "$file")
+            if [ ! -d "$file" ] && [ "$filename" != "AndroidManifest.xml" ] && [[ "$filename" != *.dex ]] && [ "$filename" != "resources.arsc" ] && [ "$filename" != "res" ] && [ "$filename" != "lib" ] && [ "$filename" != "assets" ]; then
+              cp "$file" base/root/ 2>/dev/null || true
+            fi
+          done
+          
+          # Directory structure check karo
+          echo "Base directory structure:"
+          find base -type f | head -20
 
-      # Prepare the base module directory
-      - name: Prepare Base Module
+      - name: Create Module ZIP
         run: |
-          # Unzip the base.zip (contains resources.pb, manifest, res, etc.)
-          unzip base.zip -d base_module
-          # Create dex directory
-          mkdir -p base_module/dex
-          # Copy all dex files from decompile/
-          cp decompile/*.dex base_module/dex/ 2>/dev/null || true
-          # Copy lib and assets if they exist
-          if [ -d decompile/lib ]; then cp -r decompile/lib base_module/; fi
-          if [ -d decompile/assets ]; then cp -r decompile/assets base_module/; fi
-          # Any other root files? The base_module/root/ already exists from base.zip
-          # Ensure resources.pb is in root/ (it already is from base.zip)
-
-      # Create the final base.zip
-      - name: Create Final Module ZIP
-        run: |
-          cd base_module
-          zip -r ../final_base.zip ./*
+          cd base
+          zip -r ../module.zip ./*
           cd ..
+          ls -la module.zip
 
-      # Build AAB with bundletool
       - name: Build AAB
         run: |
           java -jar bundletool.jar build-bundle \
-            --modules=final_base.zip \
+            --modules=module.zip \
             --output=app.aab
 
-      # Upload the AAB
-      - name: Upload AAB Artifact
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: app-aab
