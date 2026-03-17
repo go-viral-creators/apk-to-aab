@@ -1,4 +1,4 @@
-name: APK to AAB Converter (Auto‑Resolve)
+   name: APK to AAB Converter (Manual Method)
 
 on:
   workflow_dispatch:
@@ -17,24 +17,108 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install basic tools
+      - name: Install Required Tools
         run: |
           sudo apt update
-          sudo apt install -y wget unzip jq
+          sudo apt install -y wget unzip zip aapt2 xmlstarlet
 
       - name: Download APK
         run: |
           wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      # ----- TRY APK2AAB FIRST -----
-      - name: Get latest APK2AAB release info
-        id: apk2aab
-        continue-on-error: true
+      - name: Download Apktool
         run: |
-          # Fetch latest release from GitHub API
-          API_URL="https://api.github.com/repos/REAndroid/APK2AAB/releases/latest"
-          RELEASE_JSON=$(curl -s $API_URL)
-          # Extract browser_download_url for the first asset ending with .jar
+          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
+
+      - name: Download Bundletool
+        run: |
+          wget -O bundletool.jar https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
+
+      # Extract APK using apktool (keeping dex files with -s flag)
+      - name: Decode APK (keep dex)
+        run: |
+          java -jar apktool.jar d app.apk -s -o decompile -f
+
+      # Get manifest values using aapt2
+      - name: Extract Manifest Values
+        id: manifest
+        run: |
+          # Dump manifest in human-readable format
+          aapt2 dump manifest decompile/AndroidManifest.xml > manifest.txt
+          # Extract values
+          minSdk=$(grep -oP 'minSdk:\K\d+' manifest.txt || echo "1")
+          targetSdk=$(grep -oP 'targetSdk:\K\d+' manifest.txt || echo "1")
+          versionCode=$(grep -oP 'versionCode:\K\d+' manifest.txt || echo "1")
+          versionName=$(grep -oP "versionName:'\K[^']+" manifest.txt || echo "1.0")
+          echo "minSdk=$minSdk" >> $GITHUB_OUTPUT
+          echo "targetSdk=$targetSdk" >> $GITHUB_OUTPUT
+          echo "versionCode=$versionCode" >> $GITHUB_OUTPUT
+          echo "versionName=$versionName" >> $GITHUB_OUTPUT
+
+      # Download android.jar for the target SDK from Google's Maven
+      - name: Download android.jar
+        run: |
+          targetSdk="${{ steps.manifest.outputs.targetSdk }}"
+          # If targetSdk not found, default to 30
+          if [ -z "$targetSdk" ] || [ "$targetSdk" = "1" ]; then
+            targetSdk=30
+          fi
+          wget -O android.jar https://dl.google.com/android/maven2/android/platforms/android-${targetSdk}/android.jar || \
+          wget -O android.jar https://dl.google.com/android/repository/android-${targetSdk}/android.jar
+
+      # Compile resources with aapt2
+      - name: Compile Resources
+        run: |
+          aapt2 compile --dir decompile/res -o res.zip
+
+      # Link resources to create base.zip (proto format)
+      - name: Link Resources
+        run: |
+          aapt2 link --proto-format -o base.zip \
+            -I android.jar \
+            --manifest decompile/AndroidManifest.xml \
+            --min-sdk-version ${{ steps.manifest.outputs.minSdk }} \
+            --target-sdk-version ${{ steps.manifest.outputs.targetSdk }} \
+            --version-code ${{ steps.manifest.outputs.versionCode }} \
+            --version-name "${{ steps.manifest.outputs.versionName }}" \
+            -R res.zip \
+            --auto-add-overlay
+
+      # Prepare the base module directory
+      - name: Prepare Base Module
+        run: |
+          # Unzip the base.zip (contains resources.pb, manifest, res, etc.)
+          unzip base.zip -d base_module
+          # Create dex directory
+          mkdir -p base_module/dex
+          # Copy all dex files from decompile/
+          cp decompile/*.dex base_module/dex/ 2>/dev/null || true
+          # Copy lib and assets if they exist
+          if [ -d decompile/lib ]; then cp -r decompile/lib base_module/; fi
+          if [ -d decompile/assets ]; then cp -r decompile/assets base_module/; fi
+          # Any other root files? The base_module/root/ already exists from base.zip
+          # Ensure resources.pb is in root/ (it already is from base.zip)
+
+      # Create the final base.zip
+      - name: Create Final Module ZIP
+        run: |
+          cd base_module
+          zip -r ../final_base.zip ./*
+          cd ..
+
+      # Build AAB with bundletool
+      - name: Build AAB
+        run: |
+          java -jar bundletool.jar build-bundle \
+            --modules=final_base.zip \
+            --output=app.aab
+
+      # Upload the AAB
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-aab
+          path: app.aab       # Extract browser_download_url for the first asset ending with .jar
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
           if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
             echo "No JAR asset found in latest release."
