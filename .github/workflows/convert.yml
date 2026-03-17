@@ -17,31 +17,23 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install tools
+      - name: Install basic tools
         run: |
           sudo apt update
-          sudo apt install -y wget zip unzip
-
-      - name: Download bundletool
-        run: |
-          wget https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
-          mv bundletool-all-1.17.2.jar bundletool.jar
+          sudo apt install -y wget unzip
 
       - name: Download APK
         run: |
           wget -O app.apk https://github.com/go-viral-creators/apk-to-aab/releases/download/v1/app.apk
 
-      - name: Prepare base module
+      - name: Download APK2AAB
         run: |
-          mkdir -p base
-          cp app.apk base/base.apk
-          cd base && zip -r ../base.zip .
+          # Use the latest release; adjust version/URL if needed
+          wget -O APK2AAB.jar https://github.com/REAndroid/APK2AAB/releases/download/v1.0.0/APK2AAB.jar
 
-      - name: Build AAB
+      - name: Convert APK to AAB
         run: |
-          java -jar bundletool.jar build-bundle \
-            --modules=base.zip \
-            --output=app.aab
+          java -jar APK2AAB.jar -i app.apk -o app.aab
 
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
