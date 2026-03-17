@@ -1,0 +1,62 @@
+name: AAB to APK Converter
+
+on:
+  workflow_dispatch:
+    inputs:
+      aab_url:
+        description: 'Direct download URL of AAB file (optional)'
+        required: false
+        default: ''
+      use_artifact:
+        description: 'Use AAB from previous workflow artifact? (yes/no)'
+        required: true
+        default: 'no'
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install bundletool
+        run: |
+          sdkmanager "build-tools;34.0.0"
+          wget https://github.com/google/bundletool/releases/latest/download/bundletool-all.jar -O bundletool.jar
+
+      - name: Download AAB
+        run: |
+          if [ "${{ github.event.inputs.use_artifact }}" = "yes" ]; then
+            # Download artifact from previous run (assuming it's named 'converted-aab-file')
+            gh run download --name converted-aab-file --repo ${{ github.repository }}
+            mv *.aab input.aab 2>/dev/null || true
+          elif [ -n "${{ github.event.inputs.aab_url }}" ]; then
+            wget "${{ github.event.inputs.aab_url }}" -O input.aab
+          else
+            echo "No AAB source provided. Please provide URL or use artifact."
+            exit 1
+          fi
+
+      - name: Generate APKs from AAB
+        run: |
+          # Generate APK set
+          java -jar bundletool.jar build-apks --bundle=input.aab --output=app.apks --mode=universal
+          # Extract universal APK from the .apks archive
+          unzip app.apks -d apks_output
+          cp apks_output/universal.apk app-universal.apk 2>/dev/null || true
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-apk
+          path: app-universal.apk
