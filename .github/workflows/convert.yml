@@ -62,7 +62,12 @@ jobs:
         run: |
           # Ab bundletool ko sahi Proto format milega aur error nahi aayega
           java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
-
+      - name: Verify AAB Integrity
+        run: |
+          # Check if AAB is valid using bundletool
+          java -jar bundletool.jar validate --bundle=app.aab
+          echo "AAB is valid and healthy!"
+          
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
