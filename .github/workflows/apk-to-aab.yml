@@ -7,11 +7,6 @@ on:
         description: 'Direct URL of APK file'
         required: true
         type: string
-      mode:
-        description: 'Conversion mode'
-        required: false
-        default: 'apk-to-aab'
-        type: string
 
 jobs:
   convert:
@@ -30,57 +25,66 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Secure Download (API Method)
+      - name: Install bundletool & aapt2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
-          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar
-          gh release download v1 --repo go-viral-creators/apk-to-aab --pattern "app.apk" --clobber
+          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar" --output bundletool.jar --clobber
+
+      - name: Download APK with original filename
+        id: download
+        run: |
+          url="${{ github.event.inputs.file_url }}"
+          # Extract filename from URL (last part after /, remove query params)
+          filename=$(basename "$url" | cut -d'?' -f1)
+          # If no extension or wrong, default to input.apk
+          if [[ -z "$filename" || "$filename" != *.apk ]]; then
+            filename="input.apk"
+          fi
+          echo "Downloading as: $filename"
+          wget -O "$filename" "$url" || { echo "Download failed"; exit 1; }
+          echo "INPUT_FILE=$filename" >> $GITHUB_ENV
+          echo "filename=$filename" >> $GITHUB_OUTPUT
 
       - name: Extract and AAPT2 Convert
         run: |
-          # 1. Pehle APK ko unzip karke normal contents nikaalein
-          unzip -o app.apk -d apk_contents
-          
-          # 2. AAPT2 se poori APK ko Proto format mein convert karein (Fix for Invalid Tag Error)
-          # Isse Manifest aur Resources dono sahi format mein aa jayenge
-          aapt2 convert --output-format proto app.apk -o proto_app.zip
+          input_file="${{ env.INPUT_FILE }}"
+          unzip -o "$input_file" -d apk_contents
+          aapt2 convert --output-format proto "$input_file" -o proto_app.zip
           unzip -o proto_app.zip -d proto_out/
 
       - name: Create AAB Structure
         run: |
           mkdir -p base/manifest base/dex base/res base/lib base/assets
-          
-          # Manifest: Proto format wala copy karein (Ye zaroori hai)
           [ -f "proto_out/AndroidManifest.xml" ] && cp proto_out/AndroidManifest.xml base/manifest/
-          
-          # Resources: Proto format wale copy karein
           [ -f "proto_out/resources.pb" ] && cp proto_out/resources.pb base/
           [ -d "proto_out/res" ] && cp -r proto_out/res base/
-          
-          # Baki files normal extraction se copy karein
           cp apk_contents/*.dex base/dex/ 2>/dev/null || true
           [ -d "apk_contents/lib" ] && cp -r apk_contents/lib base/
           [ -d "apk_contents/assets" ] && cp -r apk_contents/assets base/
-          
-          # Zip module
           cd base && zip -r ../module.zip ./* && cd ..
 
       - name: Build Final AAB
+        id: build
         run: |
-          # Ab bundletool ko sahi Proto format milega aur error nahi aayega
-          java -jar bundletool.jar build-bundle --modules=module.zip --output=app.aab
+          input_file="${{ env.INPUT_FILE }}"
+          base_name="${input_file%.*}"
+          output_aab="${base_name}.aab"
+          echo "Output: $output_aab"
+          java -jar bundletool.jar build-bundle --modules=module.zip --output="$output_aab"
+          echo "OUTPUT_FILE=$output_aab" >> $GITHUB_ENV
+          echo "output_file=$output_aab" >> $GITHUB_OUTPUT
+
       - name: Verify AAB Integrity
         run: |
-          # Check if AAB is valid using bundletool
-          java -jar bundletool.jar validate --bundle=app.aab
-          echo "AAB is valid and healthy!"
-          
+          java -jar bundletool.jar validate --bundle="${{ env.OUTPUT_FILE }}"
+          echo "✅ Valid AAB"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: converted-aab-file
-          path: app.aab
+          name: converted-aab
+          path: ${{ env.OUTPUT_FILE }}
           archive: false
